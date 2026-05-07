@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YT-Downloader Pro</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <div class="container glass-panel">
+      <header>
+        <div class="logo">
+          <i class="fa-brands fa-youtube gradient-text"></i>
+          <h1 class="gradient-text">YT-Downloader Pro</h1>
+        </div>
+        <div style="margin-top: -5px; margin-bottom: 15px; font-weight: 600; letter-spacing: 1px;">
+           <span class="gradient-text" style="font-size: 0.85rem; text-transform: uppercase;">Created By: Cyrus</span>
+        </div>
+        <p class="subtitle">Fast, local, and beautiful media extraction.</p>
+      </header>
+
+      <main>
+        <form id="download-form">
+          <div class="input-group">
+            <label for="url">Video Link</label>
+            <div class="input-wrapper">
+              <i class="fa-solid fa-link input-icon"></i>
+              <input
+                type="url"
+                id="url"
+                placeholder="https://www.youtube.com/watch?v=..."
+                required
+              />
+              <button type="button" id="btn-fetch" class="btn-secondary">
+                <i class="fa-solid fa-magnifying-glass"></i>
+              </button>
+            </div>
+          </div>
+
+          <div id="video-info" class="video-info hidden">
+            <img id="video-thumb" src="" alt="Thumbnail" />
+            <h3 id="video-title">Video Title</h3>
+          </div>
+
+          <div class="options-row hidden" id="options-row">
+            <div class="input-group">
+              <label for="format">Format</label>
+              <select id="format" class="styled-select">
+                <option value="mp4">Video (MP4)</option>
+                <option value="mp3">Audio (MP3)</option>
+              </select>
+            </div>
+
+            <div class="input-group" id="quality-group">
+              <label for="quality">Quality</label>
+              <select id="quality" class="styled-select">
+                <option value="best">Best available</option>
+              </select>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            id="btn-download"
+            class="btn-primary hidden"
+            disabled
+          >
+            <i class="fa-solid fa-download"></i> Download Media
+          </button>
+        </form>
+
+        <div id="progress-container" class="progress-container hidden">
+          <div class="progress-header">
+            <span id="progress-status">Downloading...</span>
+            <span id="progress-percent">0%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="progress-bar-fill" class="progress-bar-fill"></div>
+          </div>
+          <div id="log-output" class="log-output"></div>
+        </div>
+      </main>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
