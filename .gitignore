@@ -1,15 +1,36 @@
-Country+Jazz Gospel Songs
-JIMMY SWAGGART
-node_modules
-yt downloaded
-Worship Gospel
-Yt downloaded
-WhatsApp Image 2026-01-11 at 20.41.47.jpeg
-Christian Movie 2025 - God With Us - The Life of Jesus Animated [1EH34j00B2M].webm.part
-Worthy Of My Praise - Dunsin Oyekan ft  @LawrenceOyor #dunsinoyekan #worship #thegreatcommission [lrdmnAn9gxk].mp4
-YTDown.com_YouTube_Little-Legends-School-Intro_Media_kMyzCCxVfkw_002_720p.mp4
-YTDown.com_YouTube_Little-Legends-School-Intro_Media_kMyzCCxVfkw_004_144p.mp4
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Executables
+*.exe
+
+# Downloaded Media Files
+*.mp3
+*.mp4
+*.mkv
+*.webm
+*.part
+*.ytdl
+*.webp
+*.jpeg
+*.jpg
+*.png
+*.m4a
+*.wav
+
+# Specific Download Folders
+Country+Jazz Gospel Songs/
+JIMMY SWAGGART/
+Worship Gospel/
+yt downloaded/
+Yt downloaded/
+
+# Specific Text Files
 Download template.txt
-Jonathan Nelson - I Believe (Island Medley)(Official Video) [Jcq6ncHUgFM].webp
-Christian Movie ｜ God With Us – The Life of Jesus Animated [1EH34j00B2M].webm.part
-Christian Movie ｜ God With Us – The Life of Jesus Animated [1EH34j00B2M].webm.part
+pick-folder.ps1
+pick-folder-only.ps1
+
+# OS Generated
+.DS_Store
+Thumbs.db

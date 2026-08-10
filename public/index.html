@@ -4,15 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>YT-Downloader Pro</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <meta name="description" content="Fast, local, and beautiful YouTube video and audio downloader by Cyrus." />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   </head>
   <body>
     <div class="blob blob-1"></div>
@@ -20,28 +15,24 @@
 
     <div class="container glass-panel">
       <header>
+        <button id="btn-update-ytdlp" class="btn-update" title="Update yt-dlp to the latest version">
+          <i class="fa-solid fa-rotate"></i> Update yt-dlp
+        </button>
         <div class="logo">
           <i class="fa-brands fa-youtube gradient-text"></i>
           <h1 class="gradient-text">YT-Downloader Pro</h1>
         </div>
-        <div style="margin-top: -5px; margin-bottom: 15px; font-weight: 600; letter-spacing: 1px;">
-           <span class="gradient-text" style="font-size: 0.85rem; text-transform: uppercase;">Created By: Cyrus</span>
-        </div>
+        <span class="gradient-text" style="font-size: 0.8rem; text-transform: uppercase; font-weight: 600; letter-spacing: 1px; display:block; text-align:center; margin-bottom: 6px;">Created By: Cyrus</span>
         <p class="subtitle">Fast, local, and beautiful media extraction.</p>
       </header>
 
       <main>
         <form id="download-form">
           <div class="input-group">
-            <label for="url">Video Link</label>
+            <label for="url">Video or Playlist Link</label>
             <div class="input-wrapper">
               <i class="fa-solid fa-link input-icon"></i>
-              <input
-                type="url"
-                id="url"
-                placeholder="https://www.youtube.com/watch?v=..."
-                required
-              />
+              <input type="url" id="url" placeholder="https://www.youtube.com/watch?v=... or playlist URL" required />
               <button type="button" id="btn-fetch" class="btn-secondary">
                 <i class="fa-solid fa-magnifying-glass"></i>
               </button>
@@ -50,7 +41,47 @@
 
           <div id="video-info" class="video-info hidden">
             <img id="video-thumb" src="" alt="Thumbnail" />
-            <h3 id="video-title">Video Title</h3>
+            <div class="video-info-text">
+              <h3 id="video-title">Video Title</h3>
+              <span id="video-duration-badge" class="duration-badge">
+                <i class="fa-solid fa-clock"></i> <span id="video-duration-text">--:--</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Trim / Cut Section -->
+          <div id="trim-section" class="trim-section hidden">
+            <div class="trim-header">
+              <i class="fa-solid fa-scissors"></i>
+              <span>Trim Clip</span>
+              <label class="trim-toggle-wrap">
+                <input type="checkbox" id="trim-enabled" />
+                <span class="trim-toggle"></span>
+              </label>
+            </div>
+            <div id="trim-controls" class="trim-controls disabled">
+              <div class="trim-time-row">
+                <div class="trim-time-field">
+                  <label for="trim-start">Start</label>
+                  <input type="text" id="trim-start" class="trim-time-input" placeholder="0:00" />
+                </div>
+                <div class="trim-duration-display">
+                  <i class="fa-solid fa-cut"></i>
+                  <span id="trim-clip-length">Full video</span>
+                </div>
+                <div class="trim-time-field">
+                  <label for="trim-end">End</label>
+                  <input type="text" id="trim-end" class="trim-time-input" placeholder="0:00" />
+                </div>
+              </div>
+              <div class="trim-slider-wrap">
+                <div id="trim-track" class="trim-track">
+                  <div id="trim-range-fill" class="trim-range-fill"></div>
+                  <div id="trim-thumb-start" class="trim-thumb trim-thumb-start" tabindex="0"></div>
+                  <div id="trim-thumb-end"   class="trim-thumb trim-thumb-end"   tabindex="0"></div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="options-row hidden" id="options-row">
@@ -61,7 +92,6 @@
                 <option value="mp3">Audio (MP3)</option>
               </select>
             </div>
-
             <div class="input-group" id="quality-group">
               <label for="quality">Quality</label>
               <select id="quality" class="styled-select">
@@ -70,16 +100,12 @@
             </div>
           </div>
 
-          <button
-            type="submit"
-            id="btn-download"
-            class="btn-primary hidden"
-            disabled
-          >
+          <button type="submit" id="btn-download" class="btn-primary hidden" disabled>
             <i class="fa-solid fa-download"></i> Download Media
           </button>
         </form>
 
+        <!-- Single video progress -->
         <div id="progress-container" class="progress-container hidden">
           <div class="progress-header">
             <span id="progress-status">Downloading...</span>
@@ -90,7 +116,92 @@
           </div>
           <div id="log-output" class="log-output"></div>
         </div>
+
+        <!-- Playlist Queue -->
+        <div id="queue-container" class="queue-container hidden">
+          <div class="queue-header">
+            <div>
+              <h3 class="queue-title"><i class="fa-solid fa-list-ul"></i> Playlist Queue</h3>
+              <p id="queue-subtitle" class="queue-subtitle">0 videos</p>
+            </div>
+            <div class="queue-actions">
+              <span id="queue-overall-status" class="queue-overall-status"></span>
+              <button id="btn-start-queue" class="btn-primary" style="margin-top:0; padding: 10px 20px; width:auto;" disabled>
+                <i class="fa-solid fa-play"></i> Start All
+              </button>
+            </div>
+          </div>
+          <div id="queue-list" class="queue-list"></div>
+        </div>
+
+        <!-- yt-dlp Update Progress -->
+        <div id="update-container" class="progress-container hidden" style="margin-top: 16px;">
+          <div class="progress-header">
+            <span id="update-status">Updating yt-dlp...</span>
+            <span id="update-percent"></span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="update-bar-fill" class="progress-bar-fill" style="background: linear-gradient(135deg,#34d399,#059669);"></div>
+          </div>
+          <div id="update-log" class="log-output"></div>
+        </div>
       </main>
+    </div>
+
+    <!-- Folder Picker Modal -->
+    <div id="folder-modal-overlay" class="modal-overlay hidden">
+      <div class="modal-box glass-panel">
+        <div class="modal-header">
+          <i class="fa-solid fa-folder-open gradient-text"></i>
+          <h2 class="gradient-text">Choose Save Location</h2>
+        </div>
+        <p class="modal-subtitle">Click "Browse" to choose where to save the file — just like a normal browser download.</p>
+        <div class="input-group" style="margin-top: 20px;">
+          <label for="folder-path-input">Save Location</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-folder input-icon"></i>
+            <input type="text" id="folder-path-input" placeholder="Click Browse to select save location..." readonly />
+            <button type="button" id="browse-btn" class="btn-browse">
+              <i class="fa-solid fa-magnifying-glass"></i> Browse
+            </button>
+          </div>
+        </div>
+        <p class="modal-hint"><i class="fa-solid fa-lightbulb"></i> A Windows Save As dialog will open — navigate to your folder and confirm.</p>
+        <div class="modal-actions">
+          <button id="modal-cancel-btn" class="btn-cancel">Cancel</button>
+          <button id="modal-confirm-btn" class="btn-primary" style="margin-top:0; width: auto; padding: 12px 28px;" disabled>
+            <i class="fa-solid fa-download"></i> Start Download
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Playlist Save Folder Modal -->
+    <div id="playlist-folder-modal" class="modal-overlay hidden">
+      <div class="modal-box glass-panel">
+        <div class="modal-header">
+          <i class="fa-solid fa-folder-open gradient-text"></i>
+          <h2 class="gradient-text">Save Playlist To...</h2>
+        </div>
+        <p class="modal-subtitle">Files will be saved into the folder you choose, named automatically.</p>
+        <div class="input-group" style="margin-top: 20px;">
+          <label for="playlist-folder-input">Save Folder</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-folder input-icon"></i>
+            <input type="text" id="playlist-folder-input" placeholder="Click Browse to select a folder..." readonly />
+            <button type="button" id="playlist-browse-btn" class="btn-browse">
+              <i class="fa-solid fa-magnifying-glass"></i> Browse
+            </button>
+          </div>
+        </div>
+        <p class="modal-hint"><i class="fa-solid fa-lightbulb"></i> All playlist files will be saved into this folder.</p>
+        <div class="modal-actions">
+          <button id="playlist-modal-cancel" class="btn-cancel">Cancel</button>
+          <button id="playlist-modal-confirm" class="btn-primary" style="margin-top:0; width: auto; padding: 12px 28px;" disabled>
+            <i class="fa-solid fa-play"></i> Start Queue
+          </button>
+        </div>
+      </div>
     </div>
 
     <script src="script.js"></script>
