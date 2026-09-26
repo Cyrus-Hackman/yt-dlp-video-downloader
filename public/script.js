@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentIsPlaylist = false;
     let playlistEntries   = [];
     let eventSource       = null;
+    let isFetching        = false; // Fix 6c: prevents overlapping fetches
 
     // Trim state
     let trimDuration = 0;
@@ -191,6 +192,14 @@ document.addEventListener('DOMContentLoaded', () => {
         trimSection.classList.add('hidden');
         btnDownload.classList.add('hidden');
         btnDownload.disabled = true;
+        // Fix 6a: Reset trim label in case it was set to 'unavailable'
+        const trimHeader = trimSection.querySelector('.trim-header span');
+        if (trimHeader) trimHeader.textContent = 'Trim Clip';
+        // Fix 6b: Hide and clear the old playlist queue
+        document.getElementById('queue-container').classList.add('hidden');
+        playlistEntries = [];
+        const startBtn = document.getElementById('btn-start-queue');
+        if (startBtn) startBtn.disabled = true;
     });
 
     // A4: Enter key in URL input calls fetchInfo, doesn't submit
@@ -217,9 +226,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
     formatSelectRef.addEventListener('change', populateQualities);
 
+    // Fix 6d: Video-in-playlist choice modal (replaces confirm() which has ambiguous Cancel)
+    const videoOrPlaylistModal = (() => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay hidden';
+        overlay.innerHTML = `
+          <div class="modal-box glass-panel">
+            <div class="modal-header">
+              <i class="fa-solid fa-list-ul gradient-text"></i>
+              <h2 class="gradient-text">Video or Playlist?</h2>
+            </div>
+            <p class="modal-subtitle">This URL is a video inside a playlist. What would you like to download?</p>
+            <div class="modal-actions" style="flex-direction:column; gap:10px; margin-top:24px;">
+              <button id="vp-btn-video" class="btn-primary" style="margin-top:0; width:100%;">
+                <i class="fa-solid fa-film"></i> Just this video
+              </button>
+              <button id="vp-btn-playlist" class="btn-primary" style="margin-top:0; width:100%; background:linear-gradient(135deg,#8b5cf6,#ec4899);">
+                <i class="fa-solid fa-list"></i> Whole playlist
+              </button>
+              <button id="vp-btn-cancel" class="btn-cancel" style="width:100%; text-align:center;">Cancel</button>
+            </div>
+          </div>`;
+        document.body.appendChild(overlay);
+        return {
+            ask() {
+                return new Promise((resolve) => {
+                    overlay.classList.remove('hidden');
+                    const btnV = overlay.querySelector('#vp-btn-video');
+                    const btnP = overlay.querySelector('#vp-btn-playlist');
+                    const btnC = overlay.querySelector('#vp-btn-cancel');
+                    const cleanup = (result) => {
+                        overlay.classList.add('hidden');
+                        btnV.onclick = btnP.onclick = btnC.onclick = null;
+                        resolve(result);
+                    };
+                    btnV.onclick = () => cleanup('video');
+                    btnP.onclick = () => cleanup('playlist');
+                    btnC.onclick = () => cleanup('cancel');
+                });
+            }
+        };
+    })();
+
     async function fetchInfo() {
         const url = urlInput.value.trim();
         if (!url) return alert('Please enter a valid URL');
+        // Fix 6c: Prevent overlapping fetches
+        if (isFetching) return;
+        isFetching = true;
 
         // A4: Reset info at start of every fetch
         currentVideoInfo  = null;
@@ -237,27 +291,27 @@ document.addEventListener('DOMContentLoaded', () => {
         trimSection.classList.add('hidden');
         trimEnabled.checked = false;
         trimControls.classList.add('disabled');
+        // Fix 6a: Always reset trim label at start of fetch
+        const trimHeaderSpan = trimSection.querySelector('.trim-header span');
+        if (trimHeaderSpan) trimHeaderSpan.textContent = 'Trim Clip';
 
         btnFetch.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         btnFetch.disabled  = true;
 
         try {
-            // B8: If URL has both v= and list=, ask user what to do
-            const hasVideoId   = /[?&]v=/.test(url);
-            const hasPlaylist  = /[?&]list=/.test(url) || url.includes('/playlist');
+            // B8 / Fix 6d: Detect video-in-playlist, including youtu.be/<id>?list=
+            const hasVideoId  = /[?&]v=/.test(url) || /youtu\.be\/[^?]+/.test(url);
+            const hasPlaylist = /[?&]list=/.test(url) || url.includes('/playlist');
 
             if (hasVideoId && hasPlaylist) {
-                const choice = confirm(
-                    'This URL links to a video inside a playlist.\n\n' +
-                    'Click OK to download just this video.\n' +
-                    'Click Cancel to download the whole playlist.'
-                );
-                if (choice) {
-                    // Fetch single video only
+                // Fix 6d: Use custom modal — no more ambiguous confirm()
+                const choice = await videoOrPlaylistModal.ask();
+                if (choice === 'video') {
                     await fetchSingleVideo(url);
-                } else {
+                } else if (choice === 'playlist') {
                     await fetchPlaylist(url);
                 }
+                // 'cancel' → do nothing, just restore UI
             } else if (hasPlaylist) {
                 await fetchPlaylist(url);
             } else {
@@ -269,6 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             btnFetch.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
             btnFetch.disabled  = false;
+            isFetching = false;
         }
     }
 
@@ -301,10 +356,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.duration && data.duration > 0) {
             initTrimSlider(data.duration);
             trimEnabled.disabled = false;
+            // Fix 6a: Make sure label is reset when a valid duration is found
+            const trimHeader = trimSection.querySelector('.trim-header span');
+            if (trimHeader) trimHeader.textContent = 'Trim Clip';
         } else {
             durationText.textContent = '--:--';
             trimEnabled.disabled = true;
-            // Show unavailability note
+            // Fix 6a: Show unavailability note only when duration is unknown
             const trimHeader = trimSection.querySelector('.trim-header span');
             if (trimHeader) trimHeader.textContent = 'Trim Clip (unavailable for this video)';
         }
@@ -341,9 +399,15 @@ document.addEventListener('DOMContentLoaded', () => {
         qualitySelectRef.disabled = false;
 
         if (type === 'mp4') {
+            // Fix 5: Two 'Best' options — compatible first (H.264), then full quality
+            const bestCompatOpt = document.createElement('option');
+            bestCompatOpt.value = 'best-compatible';
+            bestCompatOpt.textContent = 'Best compatible (H.264, up to 1080p)';
+            qualitySelectRef.appendChild(bestCompatOpt);
+
             const bestOpt = document.createElement('option');
             bestOpt.value = 'best';
-            bestOpt.textContent = 'Best Video';
+            bestOpt.textContent = 'Best quality (may be AV1/VP9)';
             qualitySelectRef.appendChild(bestOpt);
 
             // B2: Use generic heights for playlist, real data for single video
@@ -631,7 +695,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (eventSource) eventSource.close();
 
         // B4: Pass savePath; server handles % escaping
+        // Fix 6e: Pass trimDuration so server can compute progress when only startTime is set
         const params = { url, type, quality, savePath: fullSavePath, startTime, endTime };
+        if (startTime && trimDuration > 0) params.duration = String(trimDuration);
         const qs = new URLSearchParams(params).toString();
         eventSource = new EventSource(`/api/download?${qs}`);
 
@@ -694,15 +760,20 @@ document.addEventListener('DOMContentLoaded', () => {
     btnUpdate.addEventListener('click', () => {
         updateContainer.classList.remove('hidden');
         updateLog.innerHTML = '';
-        updateBarFill.style.width = '0%';
         updateStatus.textContent  = 'Connecting...';
         updateStatus.style.color  = '';
         updatePercent.textContent = '';
         btnUpdate.disabled = true;
         btnUpdate.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Updating...';
 
-        // B10: Server now uses yt-dlp -U; no progress bar needed
-        updateBarFill.style.width = '100%'; // indeterminate state
+        // Fix 6f: Indeterminate animated bar while update runs; set 100% only on done
+        updateBarFill.style.transition = 'none';
+        updateBarFill.style.width = '0%';
+        // Animate to ~85% to indicate work in progress (not 100% until done)
+        requestAnimationFrame(() => {
+            updateBarFill.style.transition = 'width 8s ease-out';
+            updateBarFill.style.width = '85%';
+        });
 
         const es = new EventSource('/api/update-ytdlp');
         es.onmessage = (event) => {
@@ -718,6 +789,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.done) {
                     updateStatus.textContent = '✅ Updated successfully!';
                     updateStatus.style.color = '#34d399';
+                    // Fix 6f: Now snap to 100%
+                    updateBarFill.style.transition = 'width 0.3s ease';
+                    updateBarFill.style.width = '100%';
                     es.close();
                     btnUpdate.disabled = false;
                     btnUpdate.innerHTML = '<i class="fa-solid fa-rotate"></i> Update yt-dlp';

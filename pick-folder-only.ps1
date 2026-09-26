@@ -1,5 +1,5 @@
-# B5: Force UTF-8 console output so accented/non-English paths come back correctly
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+# Fix 1: BOM-free UTF-8 (no param block needed here, so encoding goes at top)
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Application]::EnableVisualStyles()

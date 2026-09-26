@@ -131,9 +131,9 @@ Because executables are not hosted in the Git repository, download them directly
 #### Option A: Quick Launch (Recommended)
 Simply double-click the **`Start-Downloader.bat`** file in the root directory. It will:
 1. Automatically run `npm install express cors` if `node_modules` is missing.
-2. Terminate any previous Node processes running on port 3000.
+2. Terminate any previous Node processes running on port 3789.
 3. Launch the server (`node server.js`).
-4. Automatically open `http://localhost:3000` in your web browser.
+4. Automatically open `http://localhost:3789` in your web browser.
 
 #### Option B: Manual Launch
 1. Install dependencies:
@@ -146,7 +146,7 @@ Simply double-click the **`Start-Downloader.bat`** file in the root directory. I
    ```
 3. Open your browser and go to:
    ```
-   http://localhost:3000
+   http://localhost:3789
    ```
 
 ---

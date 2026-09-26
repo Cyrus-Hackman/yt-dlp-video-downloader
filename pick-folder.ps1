@@ -1,10 +1,9 @@
-# B5: Force UTF-8 console output so accented/non-English paths come back correctly
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
 param(
     [string]$FileName = "download",
     [string]$Filter = "All Files (*.*)|*.*"
 )
+# Fix 1: param() must come first. BOM-free UTF-8 so non-English paths round-trip correctly.
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Application]::EnableVisualStyles()

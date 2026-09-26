@@ -9,12 +9,16 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["youtube", "downloader", "yt-dlp", "ffmpeg"],
+  "keywords": [
+    "youtube",
+    "downloader",
+    "yt-dlp",
+    "ffmpeg"
+  ],
   "author": "Cyrus",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "cors": "^2.8.6",
     "express": "^5.2.1"
   }
 }

@@ -4,16 +4,19 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
-const PORT = 3000;
+// Fix 4: Changed to uncommon port to avoid clashing with React/Next dev servers on 3000
+const PORT = 3789;
 
-// B6: Bind to localhost only — not accessible from LAN
-// B6: Remove cors() — UI is same-origin, doesn't need it
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ── Helpers ──────────────────────────────────────────────────
+// ── Global state ──────────────────────────────────────────────
+// Fix 3: Track active downloads and update state for mutual lockout
+let activeDownloads = 0;
+let isUpdating = false;
 
-// Helper: convert seconds to HH:MM:SS
+// ── Helpers ───────────────────────────────────────────────────
+
 function secondsToTimecode(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -21,11 +24,13 @@ function secondsToTimecode(sec) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// A7: Kill yt-dlp AND its child ffmpeg.exe on Windows
+// Fix 3 / A7: Kill yt-dlp AND its child ffmpeg.exe on Windows
 function killTree(proc) {
   if (!proc || proc.exitCode !== null) return;
   if (process.platform === "win32") {
-    spawn("taskkill", ["/pid", String(proc.pid), "/T", "/F"]);
+    const tk = spawn("taskkill", ["/pid", String(proc.pid), "/T", "/F"]);
+    // Fix 3: Silence errors on the taskkill spawn itself
+    tk.on("error", () => {});
   } else {
     proc.kill("SIGKILL");
   }
@@ -36,17 +41,15 @@ function isValidUrl(url) {
   return typeof url === "string" && /^https?:\/\//i.test(url);
 }
 
-// ── Save As dialog (single video) ──────────────────────────
+// ── Save As dialog (single video) ────────────────────────────
 app.get("/api/select-folder", (req, res) => {
   const ps1Path = path.join(__dirname, "pick-folder.ps1");
-  // B4/B6: Build safe filename, strip illegal chars
   const fileName = (req.query.fileName || "download").replace(/[\\/:*?"<>|%]/g, "_");
   const fileType = req.query.fileType === "mp3" ? "mp3" : "mp4";
   const filter = fileType === "mp3"
     ? "Audio Files (*.mp3)|*.mp3"
     : "Video Files (*.mp4)|*.mp4";
 
-  // B5: Use execFile instead of exec (no shell), pass args as array
   execFile(
     "powershell",
     ["-Sta", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1Path,
@@ -57,16 +60,14 @@ app.get("/api/select-folder", (req, res) => {
         console.error("Save dialog error:", stderr);
         return res.status(500).json({ error: "Failed to open save dialog" });
       }
-      const selectedPath = stdout.trim();
-      res.json({ path: selectedPath || null });
+      res.json({ path: stdout.trim() || null });
     }
   );
 });
 
-// ── Folder-only picker (playlists) ─────────────────────────
+// ── Folder-only picker (playlists) ───────────────────────────
 app.get("/api/select-folder-only", (req, res) => {
   const ps1Path = path.join(__dirname, "pick-folder-only.ps1");
-  // B5: Use execFile, not exec
   execFile(
     "powershell",
     ["-Sta", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1Path],
@@ -76,30 +77,38 @@ app.get("/api/select-folder-only", (req, res) => {
         console.error("Folder picker error:", stderr);
         return res.status(500).json({ error: "Failed to open folder picker" });
       }
-      const selectedPath = stdout.trim();
-      res.json({ path: selectedPath || null });
+      res.json({ path: stdout.trim() || null });
     }
   );
 });
 
-// ── Fetch single video info ─────────────────────────────────
+// ── Fetch single video info ───────────────────────────────────
 app.post("/api/info", (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL is required" });
-  // B6: Validate URL
   if (!isValidUrl(url)) return res.status(400).json({ error: "Invalid URL" });
 
   const ytDlpPath = path.join(__dirname, "yt-dlp.exe");
-  // B6: Use '--' before URL, B8: add --no-playlist for single video fetch
   const proc = spawn(ytDlpPath, ["--js-runtimes", "node", "--no-playlist", "-J", "--", url]);
 
   let output = "";
   let errorOutput = "";
+  let responded = false;
+
+  // Fix 3: Handle spawn errors (missing yt-dlp.exe, antivirus block, etc.)
+  proc.on("error", (err) => {
+    if (responded) return;
+    responded = true;
+    console.error("spawn error (info):", err.message);
+    res.status(500).json({ error: "Could not start yt-dlp: " + err.message });
+  });
 
   proc.stdout.on("data", (data) => { output += data.toString(); });
   proc.stderr.on("data", (data) => { errorOutput += data.toString(); });
 
   proc.on("close", (code) => {
+    if (responded) return;
+    responded = true;
     if (code !== 0) {
       console.error(`yt-dlp error: ${errorOutput}`);
       return res.status(500).json({ error: "Failed to fetch video info", details: errorOutput });
@@ -141,15 +150,13 @@ app.post("/api/info", (req, res) => {
   });
 });
 
-// ── Fetch playlist entries ──────────────────────────────────
+// ── Fetch playlist entries ────────────────────────────────────
 app.post("/api/playlist-info", (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL is required" });
-  // B6: Validate URL
   if (!isValidUrl(url)) return res.status(400).json({ error: "Invalid URL" });
 
   const ytDlpPath = path.join(__dirname, "yt-dlp.exe");
-  // B6: Use '--' before URL
   const proc = spawn(ytDlpPath, [
     "--js-runtimes", "node",
     "--flat-playlist",
@@ -159,11 +166,22 @@ app.post("/api/playlist-info", (req, res) => {
 
   let output = "";
   let errorOutput = "";
+  let responded = false;
+
+  // Fix 3: Handle spawn errors
+  proc.on("error", (err) => {
+    if (responded) return;
+    responded = true;
+    console.error("spawn error (playlist-info):", err.message);
+    res.status(500).json({ error: "Could not start yt-dlp: " + err.message });
+  });
 
   proc.stdout.on("data", (d) => { output += d.toString(); });
   proc.stderr.on("data", (d) => { errorOutput += d.toString(); });
 
   proc.on("close", (code) => {
+    if (responded) return;
+    responded = true;
     if (code !== 0) {
       return res.status(500).json({ error: "Failed to fetch playlist", details: errorOutput });
     }
@@ -185,9 +203,9 @@ app.post("/api/playlist-info", (req, res) => {
   });
 });
 
-// ── Download endpoint (SSE) ─────────────────────────────────
+// ── Download endpoint (SSE) ───────────────────────────────────
 app.get("/api/download", (req, res) => {
-  const { url, type, quality, savePath, saveDir, startTime, endTime } = req.query;
+  const { url, type, quality, savePath, saveDir, startTime, endTime, duration: clientDuration } = req.query;
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -195,7 +213,13 @@ app.get("/api/download", (req, res) => {
 
   const sendSSE = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
 
-  // B6: Validate inputs — send SSE errors (EventSource can't read 400 body)
+  // Fix 3: Refuse while an update is running
+  if (isUpdating) {
+    sendSSE({ error: true, log: "Cannot download while yt-dlp is updating. Please wait." });
+    return res.end();
+  }
+
+  // Validate inputs
   if (!url || !type) {
     sendSSE({ error: true, log: "Missing url or type parameter" });
     return res.end();
@@ -208,7 +232,8 @@ app.get("/api/download", (req, res) => {
     sendSSE({ error: true, log: `Unknown type: ${type}` });
     return res.end();
   }
-  if (quality && quality !== "best" && !/^\d+$/.test(quality)) {
+  // Fix 5: Accept 'best-compatible' as a valid quality value
+  if (quality && quality !== "best" && quality !== "best-compatible" && !/^\d+$/.test(quality)) {
     sendSSE({ error: true, log: `Invalid quality value: ${quality}` });
     return res.end();
   }
@@ -217,9 +242,12 @@ app.get("/api/download", (req, res) => {
   let cuttingArgs = [];
   const hasStart = startTime !== undefined && startTime !== null && startTime !== "";
   const hasEnd   = endTime   !== undefined && endTime   !== null && endTime   !== "";
+  let startSec = 0;
+  let endSec = null;
+
   if (hasStart || hasEnd) {
-    const startSec = hasStart ? Number(startTime) : 0;
-    const endSec   = hasEnd   ? Number(endTime)   : null;
+    startSec = hasStart ? Number(startTime) : 0;
+    endSec   = hasEnd   ? Number(endTime)   : null;
     if (!Number.isFinite(startSec) || startSec < 0) {
       sendSSE({ error: true, log: "Invalid trim start time" });
       return res.end();
@@ -232,20 +260,22 @@ app.get("/api/download", (req, res) => {
     const section = endSec !== null
       ? `*${startTC}-${secondsToTimecode(endSec)}`
       : `*${startTC}-inf`;
-    cuttingArgs = ["--download-sections", section, "--force-keyframes-at-cuts"];
+    cuttingArgs = [
+      "--download-sections", section,
+      "--force-keyframes-at-cuts",
+      // Fix 6e: Force ffmpeg to emit progress stats on stderr
+      "--downloader-args", "ffmpeg:-stats",
+    ];
   }
 
   const ytDlpPath = path.join(__dirname, "yt-dlp.exe");
 
   // B4: Escape % in paths to prevent yt-dlp template expansion
-  // Build output template
   let outputTemplate;
   if (savePath) {
-    // Single video: strip extension, escape %, add .%(ext)s
     const escapedPath = savePath.replace(/%/g, "%%").replace(/\.(mp4|mp3)$/i, "");
     outputTemplate = `${escapedPath}.%(ext)s`;
   } else if (saveDir) {
-    // Playlist: escape % in directory, let yt-dlp build filename
     const escapedDir = saveDir.replace(/%/g, "%%");
     outputTemplate = `${escapedDir}\\%(title)s [%(id)s].%(ext)s`;
   } else {
@@ -253,47 +283,59 @@ app.get("/api/download", (req, res) => {
   }
 
   let args = [];
+  const isSingleVideo = !!savePath; // savePath only set for single-video mode
 
   if (type === "mp3") {
-    // B1: Use actual quality value for MP3, not hardcoded 'best'
     const audioQual = quality && quality !== "best" ? `${quality}K` : "0";
     args = [
       "--js-runtimes", "node",
       "-x", "--audio-format", "mp3",
       "--audio-quality", audioQual,
-      // B9: Embed thumbnail and metadata for MP3s
       "--embed-thumbnail", "--convert-thumbnails", "jpg", "--embed-metadata",
       "--ffmpeg-location", __dirname,
-      "--newline",  // A6: Force one line per progress update
+      "--newline",
       ...cuttingArgs,
-      // A3: Force overwrite for single (non-playlist) downloads
-      ...(savePath ? ["--force-overwrites"] : []),
+      ...(isSingleVideo ? ["--force-overwrites", "--no-playlist"] : []), // Fix 2
       "-o", outputTemplate,
-      "--", url,  // B6: '--' before URL
+      "--", url,
     ];
   } else {
-    // B3: Improved format string for correct resolution matching
-    const formatArg = quality && quality !== "best"
-      ? `bv*[height=${quality}][vcodec^=avc1]+ba[ext=m4a]/bv*[height=${quality}]+ba/bv*[height<=${quality}]+ba/b[height<=${quality}]/b`
-      : "bv*+ba/b";
+    // Fix 5: Handle 'best-compatible' quality option
+    let formatArg;
+    if (quality === "best-compatible") {
+      formatArg = "bv*[vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b";
+    } else if (quality && quality !== "best") {
+      formatArg = `bv*[height=${quality}][vcodec^=avc1]+ba[ext=m4a]/bv*[height=${quality}]+ba/bv*[height<=${quality}]+ba/b[height<=${quality}]/b`;
+    } else {
+      formatArg = "bv*+ba/b";
+    }
     args = [
       "--js-runtimes", "node",
       "-f", formatArg,
       "--merge-output-format", "mp4",
       "--ffmpeg-location", __dirname,
-      "--newline",  // A6: Force one line per progress update
+      "--newline",
       ...cuttingArgs,
-      // A3: Force overwrite for single (non-playlist) downloads
-      ...(savePath ? ["--force-overwrites"] : []),
+      ...(isSingleVideo ? ["--force-overwrites", "--no-playlist"] : []), // Fix 2
       "-o", outputTemplate,
-      "--", url,  // B6: '--' before URL
+      "--", url,
     ];
   }
 
   const downloadProcess = spawn(ytDlpPath, args);
-  let lastProgress = null;
 
-  // A6: Parse progress from stdout (split on all newline types)
+  // Fix 3: Track active downloads
+  activeDownloads++;
+
+  // Fix 3: Handle spawn error (missing yt-dlp.exe etc.)
+  downloadProcess.on("error", (err) => {
+    console.error("spawn error (download):", err.message);
+    sendSSE({ error: true, log: "Could not start yt-dlp: " + err.message });
+    activeDownloads = Math.max(0, activeDownloads - 1);
+    res.end();
+  });
+
+  // A6: Parse progress from stdout
   downloadProcess.stdout.on("data", (data) => {
     const text = data.toString();
     const lines = text.split(/\r\n|\r|\n/);
@@ -303,50 +345,54 @@ app.get("/api/download", (req, res) => {
       if (m) foundProgress = parseFloat(m[1]);
     }
     const payload = { log: text.trim() };
-    if (foundProgress !== null) {
-      lastProgress = foundProgress;
-      payload.progress = foundProgress;
-    }
+    if (foundProgress !== null) payload.progress = foundProgress;
     if (text.trim()) sendSSE(payload);
   });
 
-  // A6: Also parse ffmpeg time= from stderr for trimmed downloads
+  // A6 / Fix 6e: Parse ffmpeg time= from stderr for trimmed downloads
   downloadProcess.stderr.on("data", (data) => {
     const text = data.toString();
     const lines = text.split(/\r\n|\r|\n/);
     let foundProgress = null;
 
-    // Try yt-dlp style first
+    // yt-dlp style [download] NN%
     for (const line of lines) {
       const m = line.match(/\[download\]\s+(\d+\.?\d*)%/);
       if (m) foundProgress = parseFloat(m[1]);
     }
 
-    // If trim active, parse ffmpeg time= progress
+    // ffmpeg time= progress for trimmed downloads
     if (foundProgress === null && (hasStart || hasEnd)) {
       for (const line of lines) {
         const m = line.match(/time=(\d+):(\d+):(\d+\.?\d*)/);
         if (m) {
           const elapsed = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]);
-          const startSec = hasStart ? Number(startTime) : 0;
-          const endSec   = hasEnd   ? Number(endTime)   : null;
+
+          // Fix 6e: Use endSec if available, otherwise fall back to clientDuration - startSec
+          let clipLen = null;
           if (endSec !== null && endSec > startSec) {
-            const pct = Math.min(99, (elapsed / (endSec - startSec)) * 100);
-            foundProgress = Math.round(pct);
+            clipLen = endSec - startSec;
+          } else if (clientDuration) {
+            const totalDur = Number(clientDuration);
+            if (Number.isFinite(totalDur) && totalDur > startSec) {
+              clipLen = totalDur - startSec;
+            }
+          }
+
+          if (clipLen !== null && clipLen > 0) {
+            foundProgress = Math.min(99, Math.round((elapsed / clipLen) * 100));
           }
         }
       }
     }
 
     const payload = { log: text.trim() };
-    if (foundProgress !== null) {
-      lastProgress = foundProgress;
-      payload.progress = foundProgress;
-    }
+    if (foundProgress !== null) payload.progress = foundProgress;
     if (text.trim()) sendSSE(payload);
   });
 
   downloadProcess.on("close", (code) => {
+    activeDownloads = Math.max(0, activeDownloads - 1);
     if (code === 0) {
       sendSSE({ done: true, progress: 100, log: "Download completed successfully!" });
     } else {
@@ -355,23 +401,37 @@ app.get("/api/download", (req, res) => {
     res.end();
   });
 
-  // A7: Kill entire process tree on client disconnect (use res 'close', not req 'close')
+  // A7: Kill process tree when client disconnects
   res.on("close", () => killTree(downloadProcess));
 });
 
-// ── yt-dlp self-update via SSE ──────────────────────────────
-// B10: Replace custom HTTP downloader with yt-dlp -U (much simpler, safer)
+// ── yt-dlp self-update via SSE ────────────────────────────────
 app.get("/api/update-ytdlp", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
   const sendSSE = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  const ytDlpPath = path.join(__dirname, "yt-dlp.exe");
 
+  // Fix 3: Refuse while downloads are running
+  if (activeDownloads > 0) {
+    sendSSE({ error: true, log: `Cannot update while ${activeDownloads} download(s) are running. Please wait.` });
+    return res.end();
+  }
+
+  isUpdating = true;
+  const ytDlpPath = path.join(__dirname, "yt-dlp.exe");
   sendSSE({ log: "Running yt-dlp -U to check for updates..." });
 
   const proc = spawn(ytDlpPath, ["-U"]);
+
+  // Fix 3: Handle spawn error
+  proc.on("error", (err) => {
+    isUpdating = false;
+    console.error("spawn error (update):", err.message);
+    sendSSE({ error: true, log: "Could not start yt-dlp: " + err.message });
+    res.end();
+  });
 
   proc.stdout.on("data", (data) => {
     const text = data.toString().trim();
@@ -383,6 +443,7 @@ app.get("/api/update-ytdlp", (req, res) => {
   });
 
   proc.on("close", (code) => {
+    isUpdating = false;
     if (code === 0) {
       sendSSE({ done: true, log: "yt-dlp is up to date! 🎉" });
     } else {
@@ -391,10 +452,13 @@ app.get("/api/update-ytdlp", (req, res) => {
     res.end();
   });
 
-  res.on("close", () => killTree(proc));
+  res.on("close", () => {
+    isUpdating = false;
+    killTree(proc);
+  });
 });
 
-// B6: Bind to localhost only
+// Fix 4: Bind to localhost only, port 3789
 app.listen(PORT, "127.0.0.1", () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
