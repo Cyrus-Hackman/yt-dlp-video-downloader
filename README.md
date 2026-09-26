@@ -53,7 +53,7 @@
 
 - **Backend:** Node.js, Express, Server-Sent Events (SSE), Child Process (`spawn`/`exec`)
 - **Frontend:** Vanilla HTML5, Modern CSS3 (Glassmorphism, responsive design, animations), Vanilla JavaScript
-- **Core Binaries:** `yt-dlp.exe` & `ffmpeg.exe` (included locally)
+- **Core Binaries:** `yt-dlp.exe` & `ffmpeg.exe` (downloaded by user, placed in root)
 - **Windows Integration:** PowerShell STA Form Dialogs (`SaveFileDialog` & `FolderBrowserDialog`)
 
 ---
@@ -70,10 +70,10 @@ yt-dlp-video-downloader/
 ├── pick-folder.ps1           # Windows SaveFileDialog helper script
 ├── pick-folder-only.ps1      # Windows FolderBrowserDialog helper script
 ├── Start-Downloader.bat      # One-click desktop launcher
-├── yt-dlp.exe                # yt-dlp binary
-├── ffmpeg.exe                # FFmpeg converter binary
+├── yt-dlp.exe                # yt-dlp binary (downloaded separately)
+├── ffmpeg.exe                # FFmpeg binary (downloaded separately)
 ├── package.json              # Project dependencies and configuration
-├── .gitignore                # Git ignore rules for media and temporary files
+├── .gitignore                # Git ignore rules for media and binaries
 └── README.md                 # Project documentation
 ```
 
@@ -85,39 +85,65 @@ yt-dlp-video-downloader/
 
 - **Operating System:** Windows 10 / 11
 - **Node.js:** [Node.js (v16 or higher)](https://nodejs.org/) installed and available in your `PATH`.
-- Executables `yt-dlp.exe` and `ffmpeg.exe` located in the root directory.
 
 ---
 
-### Quick Launch (Recommended)
+### Step 1: Clone the Repository
 
+```bash
+git clone https://github.com/Cyrus-Hackman/yt-dlp-video-downloader.git
+cd yt-dlp-video-downloader
+```
+
+---
+
+### Step 2: Download Required Executables (`yt-dlp.exe` & `ffmpeg.exe`)
+
+Because executables are not hosted in the Git repository, download them directly from their official sources and place them into the root folder of this project (`yt-dlp-video-downloader/` alongside `server.js`):
+
+#### 1. Download `yt-dlp.exe`
+- **Direct Download:** [https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe](https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe)
+- Place `yt-dlp.exe` directly in the project folder.
+
+#### 2. Download `ffmpeg.exe`
+- **Official Builds:** Download a Windows build from [Gyan.dev FFmpeg Builds](https://www.gyan.dev/ffmpeg/builds/) (e.g. `ffmpeg-release-essentials.zip`) or [BtbN FFmpeg Releases](https://github.com/BtbN/FFmpeg-Builds/releases).
+- Open the downloaded `.zip` archive, go to the `bin/` folder, and extract **`ffmpeg.exe`** into the project folder.
+
+> [!TIP]
+> **Quick PowerShell Download (Optional):**  
+> You can download and place both files automatically by running PowerShell in the project directory:
+> ```powershell
+> # Download yt-dlp.exe
+> Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "yt-dlp.exe"
+> 
+> # Download and extract ffmpeg.exe
+> Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
+> Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg-temp"
+> Get-ChildItem -Path "ffmpeg-temp" -Filter "ffmpeg.exe" -Recurse | Copy-Item -Destination "ffmpeg.exe"
+> Remove-Item -Recurse -Force "ffmpeg.zip", "ffmpeg-temp"
+> ```
+
+---
+
+### Step 3: Run the Application
+
+#### Option A: Quick Launch (Recommended)
 Simply double-click the **`Start-Downloader.bat`** file in the root directory. It will:
 1. Automatically run `npm install express cors` if `node_modules` is missing.
 2. Terminate any previous Node processes running on port 3000.
 3. Launch the server (`node server.js`).
 4. Automatically open `http://localhost:3000` in your web browser.
 
----
-
-### Manual Launch
-
-1. Clone or download this repository:
-   ```bash
-   git clone https://github.com/Cyrus-Hackman/yt-dlp-video-downloader.git
-   cd yt-dlp-video-downloader
-   ```
-
-2. Install dependencies:
+#### Option B: Manual Launch
+1. Install dependencies:
    ```bash
    npm install
    ```
-
-3. Start the application:
+2. Start the server:
    ```bash
    node server.js
    ```
-
-4. Open your web browser and navigate to:
+3. Open your browser and go to:
    ```
    http://localhost:3000
    ```
