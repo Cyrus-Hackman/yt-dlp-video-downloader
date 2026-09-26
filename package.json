@@ -1,13 +1,16 @@
 {
-  "name": "yt",
+  "name": "yt-dlp-video-downloader",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Fast, local YouTube video and audio downloader with a glassmorphic UI",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["youtube", "downloader", "yt-dlp", "ffmpeg"],
+  "author": "Cyrus",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {

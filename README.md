@@ -84,7 +84,8 @@ yt-dlp-video-downloader/
 ### Prerequisites
 
 - **Operating System:** Windows 10 / 11
-- **Node.js:** [Node.js (v16 or higher)](https://nodejs.org/) installed and available in your `PATH`.
+- **Node.js:** [Node.js (v18 or higher)](https://nodejs.org/) installed and available in your `PATH`. *(Express 5 requires Node 18+)*
+
 
 ---
 

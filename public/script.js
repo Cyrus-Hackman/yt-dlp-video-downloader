@@ -1,15 +1,15 @@
 document.addEventListener('DOMContentLoaded', () => {
     // ── Core refs ──────────────────────────────────────────────
-    const urlInput       = document.getElementById('url');
-    const btnFetch       = document.getElementById('btn-fetch');
-    const btnDownload    = document.getElementById('btn-download');
-    const videoInfoRef   = document.getElementById('video-info');
-    const videoTitleRef  = document.getElementById('video-title');
-    const videoThumbRef  = document.getElementById('video-thumb');
-    const optionsRowRef  = document.getElementById('options-row');
+    const urlInput        = document.getElementById('url');
+    const btnFetch        = document.getElementById('btn-fetch');
+    const btnDownload     = document.getElementById('btn-download');
+    const videoInfoRef    = document.getElementById('video-info');
+    const videoTitleRef   = document.getElementById('video-title');
+    const videoThumbRef   = document.getElementById('video-thumb');
+    const optionsRowRef   = document.getElementById('options-row');
     const formatSelectRef = document.getElementById('format');
-    const qualitySelectRef = document.getElementById('quality');
-    const qualityGroupRef  = document.getElementById('quality-group');
+    const qualitySelectRef= document.getElementById('quality');
+    const qualityGroupRef = document.getElementById('quality-group');
 
     // Single-video progress
     const progressContainer  = document.getElementById('progress-container');
@@ -19,37 +19,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const logOutputRef       = document.getElementById('log-output');
 
     // ── State ──────────────────────────────────────────────────
-    let currentVideoInfo = null;
+    let currentVideoInfo  = null;
     let currentIsPlaylist = false;
-    let playlistEntries  = [];
-    let eventSource      = null;
+    let playlistEntries   = [];
+    let eventSource       = null;
 
     // Trim state
-    let trimDuration    = 0;   // total video seconds
-    let trimStartSec    = 0;
-    let trimEndSec      = 0;
+    let trimDuration = 0;
+    let trimStartSec = 0;
+    let trimEndSec   = 0;
 
     // ── Trim UI refs ───────────────────────────────────────────
-    const trimSection     = document.getElementById('trim-section');
-    const trimEnabled     = document.getElementById('trim-enabled');
-    const trimControls    = document.getElementById('trim-controls');
-    const trimStartInput  = document.getElementById('trim-start');
-    const trimEndInput    = document.getElementById('trim-end');
-    const trimClipLength  = document.getElementById('trim-clip-length');
-    const trimTrack       = document.getElementById('trim-track');
-    const trimRangeFill   = document.getElementById('trim-range-fill');
-    const trimThumbStart  = document.getElementById('trim-thumb-start');
-    const trimThumbEnd    = document.getElementById('trim-thumb-end');
-    const durationText    = document.getElementById('video-duration-text');
+    const trimSection    = document.getElementById('trim-section');
+    const trimEnabled    = document.getElementById('trim-enabled');
+    const trimControls   = document.getElementById('trim-controls');
+    const trimStartInput = document.getElementById('trim-start');
+    const trimEndInput   = document.getElementById('trim-end');
+    const trimClipLength = document.getElementById('trim-clip-length');
+    const trimRangeFill  = document.getElementById('trim-range-fill');
+    const durationText   = document.getElementById('video-duration-text');
 
-    // ── Fetch / detect ─────────────────────────────────────────
-    btnFetch.addEventListener('click', fetchInfo);
-    document.getElementById('download-form').addEventListener('submit', (e) => {
-        e.preventDefault();
-        if (currentIsPlaylist) openPlaylistFolderModal();
-        else startDownload();
-    });
-    formatSelectRef.addEventListener('change', populateQualities);
+    // A1/A2: Use stable element references, never clone
+    const trackEl  = document.getElementById('trim-track');
+    const startEl  = document.getElementById('trim-thumb-start');
+    const endEl    = document.getElementById('trim-thumb-end');
 
     // ── Trim helpers ───────────────────────────────────────────
     function formatTime(sec) {
@@ -62,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function parseTimeInput(str) {
-        // accepts H:MM:SS or M:SS or plain seconds
         const parts = str.split(':').map(Number);
         if (parts.some(isNaN)) return null;
         if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
@@ -74,8 +66,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!trimDuration) return;
         const startPct = (trimStartSec / trimDuration) * 100;
         const endPct   = (trimEndSec   / trimDuration) * 100;
-        trimThumbStart.style.left = startPct + '%';
-        trimThumbEnd.style.left   = endPct   + '%';
+        // A1: Always write to the LIVE elements (never detached clones)
+        startEl.style.left       = startPct + '%';
+        endEl.style.left         = endPct   + '%';
         trimRangeFill.style.left  = startPct + '%';
         trimRangeFill.style.width = (endPct - startPct) + '%';
         trimStartInput.value = formatTime(trimStartSec);
@@ -84,59 +77,88 @@ document.addEventListener('DOMContentLoaded', () => {
         trimClipLength.textContent = clipSec > 0 ? formatTime(clipSec) + ' selected' : 'Full video';
     }
 
+    // A1: initTrimSlider only sets state + redraws — no cloning, no new listeners
     function initTrimSlider(duration) {
         trimDuration = duration;
         trimStartSec = 0;
         trimEndSec   = duration;
-        updateTrimUI();
         durationText.textContent = formatTime(duration);
-
-        // Drag logic
-        function makeDraggable(thumb, isStart) {
-            let dragging = false;
-            const onDown = (e) => {
-                e.preventDefault();
-                dragging = true;
-                document.addEventListener('mousemove', onMove);
-                document.addEventListener('mouseup', onUp);
-                document.addEventListener('touchmove', onMove, { passive: false });
-                document.addEventListener('touchend', onUp);
-            };
-            const onMove = (e) => {
-                if (!dragging) return;
-                e.preventDefault();
-                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                const rect = trimTrack.getBoundingClientRect();
-                let pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-                let sec = pct * trimDuration;
-                if (isStart) {
-                    trimStartSec = Math.min(sec, trimEndSec - 1);
-                } else {
-                    trimEndSec = Math.max(sec, trimStartSec + 1);
-                }
-                updateTrimUI();
-            };
-            const onUp = () => {
-                dragging = false;
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-                document.removeEventListener('touchmove', onMove);
-                document.removeEventListener('touchend', onUp);
-            };
-            thumb.addEventListener('mousedown', onDown);
-            thumb.addEventListener('touchstart', onDown, { passive: false });
-        }
-
-        // Re-attach by cloning to remove old listeners
-        const newStart = trimThumbStart.cloneNode(true);
-        const newEnd   = trimThumbEnd.cloneNode(true);
-        trimThumbStart.replaceWith(newStart);
-        trimThumbEnd.replaceWith(newEnd);
-        makeDraggable(document.getElementById('trim-thumb-start'), true);
-        makeDraggable(document.getElementById('trim-thumb-end'),   false);
+        updateTrimUI();
     }
 
-    // Text input -> slider sync
+    // A2: Single pointer-event handler on the track, registered once at startup
+    let activeThumb = null; // 'start' | 'end' | 'pending' | null
+    let downX = 0;
+
+    const secFromX = (x) => {
+        const r = trackEl.getBoundingClientRect();
+        // A2: Snap to whole seconds
+        return Math.round(Math.max(0, Math.min(1, (x - r.left) / r.width)) * trimDuration);
+    };
+
+    function setThumb(which, sec) {
+        if (which === 'start') {
+            trimStartSec = Math.max(0, Math.min(sec, trimEndSec - 1));
+        } else {
+            trimEndSec = Math.min(trimDuration, Math.max(sec, trimStartSec + 1));
+        }
+        // A2: Raise z-index of the last-moved thumb so it's always grabbable
+        startEl.style.zIndex = which === 'start' ? 3 : 2;
+        endEl.style.zIndex   = which === 'end'   ? 3 : 2;
+        updateTrimUI();
+    }
+
+    trackEl.addEventListener('pointerdown', (e) => {
+        // A2: Guard: only active when trim is enabled and duration is known
+        if (!trimDuration || !trimEnabled.checked) return;
+        e.preventDefault();
+        trackEl.setPointerCapture(e.pointerId);
+        downX = e.clientX;
+
+        const r = trackEl.getBoundingClientRect();
+        const gapPx = ((trimEndSec - trimStartSec) / trimDuration) * r.width;
+        const sec   = secFromX(e.clientX);
+
+        // A2: If handles are very close and user clicks one of them, defer
+        if (gapPx < 20 && (e.target === startEl || e.target === endEl)) {
+            activeThumb = 'pending';
+            return;
+        }
+
+        // Pick nearest thumb by time distance
+        activeThumb = Math.abs(sec - trimStartSec) <= Math.abs(sec - trimEndSec) ? 'start' : 'end';
+        setThumb(activeThumb, sec);
+    });
+
+    trackEl.addEventListener('pointermove', (e) => {
+        if (!activeThumb) return;
+        // A2: Resolve 'pending' on first real movement
+        if (activeThumb === 'pending') {
+            if (Math.abs(e.clientX - downX) < 3) return;
+            activeThumb = e.clientX < downX ? 'start' : 'end';
+        }
+        setThumb(activeThumb, secFromX(e.clientX));
+    });
+
+    ['pointerup', 'pointercancel'].forEach(t =>
+        trackEl.addEventListener(t, () => { activeThumb = null; })
+    );
+
+    // A2: Keyboard support on the thumbs
+    startEl.addEventListener('keydown', (e) => {
+        if (!trimDuration || !trimEnabled.checked) return;
+        const step = e.shiftKey ? 10 : 1;
+        if (e.key === 'ArrowLeft')  { setThumb('start', trimStartSec - step); e.preventDefault(); }
+        if (e.key === 'ArrowRight') { setThumb('start', trimStartSec + step); e.preventDefault(); }
+    });
+    endEl.addEventListener('keydown', (e) => {
+        if (!trimDuration || !trimEnabled.checked) return;
+        const step = e.shiftKey ? 10 : 1;
+        if (e.key === 'ArrowLeft')  { setThumb('end', trimEndSec - step); e.preventDefault(); }
+        if (e.key === 'ArrowRight') { setThumb('end', trimEndSec + step); e.preventDefault(); }
+    });
+
+    // Text input → slider sync
     trimStartInput.addEventListener('change', () => {
         const v = parseTimeInput(trimStartInput.value);
         if (v !== null && v >= 0 && v < trimEndSec) { trimStartSec = v; updateTrimUI(); }
@@ -157,83 +179,89 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ── A4: Reset state when URL input changes ─────────────────
+    urlInput.addEventListener('input', () => {
+        currentVideoInfo  = null;
+        currentIsPlaylist = false;
+        trimDuration = 0;
+        trimEnabled.checked = false;
+        trimControls.classList.add('disabled');
+        videoInfoRef.classList.add('hidden');
+        optionsRowRef.classList.add('hidden');
+        trimSection.classList.add('hidden');
+        btnDownload.classList.add('hidden');
+        btnDownload.disabled = true;
+    });
+
+    // A4: Enter key in URL input calls fetchInfo, doesn't submit
+    urlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            fetchInfo();
+        }
+    });
+
+    // ── Fetch / detect ─────────────────────────────────────────
+    btnFetch.addEventListener('click', fetchInfo);
+
+    document.getElementById('download-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        // A4: If no info fetched for the current URL, fetch first
+        if (!currentVideoInfo && !currentIsPlaylist) {
+            fetchInfo();
+            return;
+        }
+        if (currentIsPlaylist) openPlaylistFolderModal();
+        else startDownload();
+    });
+
+    formatSelectRef.addEventListener('change', populateQualities);
+
     async function fetchInfo() {
         const url = urlInput.value.trim();
         if (!url) return alert('Please enter a valid URL');
 
-        // Reset
+        // A4: Reset info at start of every fetch
+        currentVideoInfo  = null;
+        currentIsPlaylist = false;
+        playlistEntries   = [];
+        trimDuration = 0;
+
+        // Reset UI
         videoInfoRef.classList.add('hidden');
         optionsRowRef.classList.add('hidden');
         btnDownload.classList.add('hidden');
+        btnDownload.disabled = true;
         progressContainer.classList.add('hidden');
         document.getElementById('queue-container').classList.add('hidden');
         trimSection.classList.add('hidden');
         trimEnabled.checked = false;
         trimControls.classList.add('disabled');
-        trimDuration = 0;
-        currentIsPlaylist = false;
-        playlistEntries   = [];
 
         btnFetch.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
         btnFetch.disabled  = true;
 
         try {
-            const isPlaylistUrl = url.includes('list=') || url.includes('/playlist');
+            // B8: If URL has both v= and list=, ask user what to do
+            const hasVideoId   = /[?&]v=/.test(url);
+            const hasPlaylist  = /[?&]list=/.test(url) || url.includes('/playlist');
 
-            if (isPlaylistUrl) {
-                // Playlist — fetch flat list of entries
-                const plRes = await fetch('/api/playlist-info', {
-                    method:  'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify({ url }),
-                });
-                if (!plRes.ok) throw new Error('Failed to fetch playlist info');
-                const plData = await plRes.json();
-
-                if (plData.isPlaylist && plData.entries && plData.entries.length > 0) {
-                    currentIsPlaylist = true;
-                    playlistEntries   = plData.entries;
-                    buildPlaylistQueue(plData.title, plData.entries);
-                    optionsRowRef.classList.remove('hidden');
-                    populateQualities();
-                    btnDownload.classList.remove('hidden');
-                    btnDownload.disabled  = false;
-                    btnDownload.innerHTML = '<i class="fa-solid fa-list-ul"></i> Download Playlist';
-                    videoInfoRef.classList.add('hidden');
+            if (hasVideoId && hasPlaylist) {
+                const choice = confirm(
+                    'This URL links to a video inside a playlist.\n\n' +
+                    'Click OK to download just this video.\n' +
+                    'Click Cancel to download the whole playlist.'
+                );
+                if (choice) {
+                    // Fetch single video only
+                    await fetchSingleVideo(url);
                 } else {
-                    throw new Error('No videos found in this playlist.');
+                    await fetchPlaylist(url);
                 }
+            } else if (hasPlaylist) {
+                await fetchPlaylist(url);
             } else {
-                // Single video — get full info
-                const res = await fetch('/api/info', {
-                    method:  'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify({ url }),
-                });
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.error || 'Failed to fetch');
-                }
-                const data = await res.json();
-                currentVideoInfo  = data;
-                videoTitleRef.textContent = data.title || 'Unknown Title';
-                videoThumbRef.src = data.thumbnail || '';
-                videoInfoRef.classList.remove('hidden');
-                optionsRowRef.classList.remove('hidden');
-                populateQualities();
-                btnDownload.classList.remove('hidden');
-                btnDownload.disabled  = false;
-                btnDownload.innerHTML = '<i class="fa-solid fa-download"></i> Download Media';
-
-                // Show trim section using duration from the info response
-                trimSection.classList.remove('hidden');
-                trimEnabled.checked = false;
-                trimControls.classList.add('disabled');
-                if (data.duration && data.duration > 0) {
-                    initTrimSlider(data.duration);
-                } else {
-                    durationText.textContent = '--:--';
-                }
+                await fetchSingleVideo(url);
             }
         } catch (err) {
             alert('Error: ' + err.message);
@@ -241,6 +269,68 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             btnFetch.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
             btnFetch.disabled  = false;
+        }
+    }
+
+    async function fetchSingleVideo(url) {
+        const res = await fetch('/api/info', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ url }),
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Failed to fetch');
+        }
+        const data = await res.json();
+        currentVideoInfo = data;
+        videoTitleRef.textContent = data.title || 'Unknown Title';
+        videoThumbRef.src = data.thumbnail || '';
+        videoInfoRef.classList.remove('hidden');
+        optionsRowRef.classList.remove('hidden');
+        populateQualities();
+        btnDownload.classList.remove('hidden');
+        btnDownload.disabled  = false;
+        btnDownload.innerHTML = '<i class="fa-solid fa-download"></i> Download Media';
+
+        // A8: Only show trim if duration is known
+        trimSection.classList.remove('hidden');
+        trimEnabled.checked = false;
+        trimControls.classList.add('disabled');
+
+        if (data.duration && data.duration > 0) {
+            initTrimSlider(data.duration);
+            trimEnabled.disabled = false;
+        } else {
+            durationText.textContent = '--:--';
+            trimEnabled.disabled = true;
+            // Show unavailability note
+            const trimHeader = trimSection.querySelector('.trim-header span');
+            if (trimHeader) trimHeader.textContent = 'Trim Clip (unavailable for this video)';
+        }
+    }
+
+    async function fetchPlaylist(url) {
+        const plRes = await fetch('/api/playlist-info', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ url }),
+        });
+        if (!plRes.ok) throw new Error('Failed to fetch playlist info');
+        const plData = await plRes.json();
+
+        if (plData.isPlaylist && plData.entries && plData.entries.length > 0) {
+            currentIsPlaylist = true;
+            playlistEntries   = plData.entries;
+            buildPlaylistQueue(plData.title, plData.entries);
+            optionsRowRef.classList.remove('hidden');
+            populateQualities();
+            btnDownload.classList.remove('hidden');
+            btnDownload.disabled  = false;
+            btnDownload.innerHTML = '<i class="fa-solid fa-list-ul"></i> Download Playlist';
+            videoInfoRef.classList.add('hidden');
+        } else {
+            throw new Error('No videos found in this playlist.');
         }
     }
 
@@ -255,27 +345,37 @@ document.addEventListener('DOMContentLoaded', () => {
             bestOpt.value = 'best';
             bestOpt.textContent = 'Best Video';
             qualitySelectRef.appendChild(bestOpt);
-            if (currentVideoInfo && currentVideoInfo.videoQualities) {
-                currentVideoInfo.videoQualities.forEach((q) => {
-                    const opt = document.createElement('option');
-                    opt.value = q.height;
-                    opt.textContent = `${q.height}p`;
-                    qualitySelectRef.appendChild(opt);
-                });
-            }
+
+            // B2: Use generic heights for playlist, real data for single video
+            const heights = (currentVideoInfo && currentVideoInfo.videoQualities && !currentIsPlaylist)
+                ? currentVideoInfo.videoQualities.map(q => q.height)
+                : [2160, 1440, 1080, 720, 480, 360];
+
+            heights.forEach((h) => {
+                const opt = document.createElement('option');
+                opt.value = h;
+                // B3: Note for high-res that may use VP9/AV1
+                const note = (h >= 1440) ? ' (VP9/AV1)' : '';
+                opt.textContent = `${h}p${note}`;
+                qualitySelectRef.appendChild(opt);
+            });
         } else if (type === 'mp3') {
             const bestAudio = document.createElement('option');
             bestAudio.value = 'best';
             bestAudio.textContent = 'Best Audio (VBR)';
             qualitySelectRef.appendChild(bestAudio);
-            if (currentVideoInfo && currentVideoInfo.audioQualities) {
-                currentVideoInfo.audioQualities.forEach((kbps) => {
-                    const opt = document.createElement('option');
-                    opt.value = kbps;
-                    opt.textContent = `${kbps} kbps`;
-                    qualitySelectRef.appendChild(opt);
-                });
-            }
+
+            // B2: Always show bitrate list (use generic for playlist)
+            const bitrates = (currentVideoInfo && currentVideoInfo.audioQualities && !currentIsPlaylist)
+                ? currentVideoInfo.audioQualities
+                : [320, 256, 192, 128, 96, 64];
+
+            bitrates.forEach((kbps) => {
+                const opt = document.createElement('option');
+                opt.value = kbps;
+                opt.textContent = `${kbps} kbps`;
+                qualitySelectRef.appendChild(opt);
+            });
         }
     }
 
@@ -293,17 +393,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             item.className = 'queue-item';
             item.id        = `queue-item-${i}`;
-            item.innerHTML = `
-                <div class="queue-item-num">${i + 1}</div>
-                <div class="queue-item-info">
-                    <div class="queue-item-title">${entry.title}</div>
-                    <div class="queue-item-bar-bg hidden">
-                        <div class="queue-item-bar-fill"></div>
-                    </div>
-                </div>
-                <div class="queue-item-status" id="queue-status-${i}">
-                    <i class="fa-regular fa-clock"></i> Pending
-                </div>`;
+
+            const numEl = document.createElement('div');
+            numEl.className = 'queue-item-num';
+            numEl.textContent = String(i + 1);
+
+            const infoEl = document.createElement('div');
+            infoEl.className = 'queue-item-info';
+
+            // B7: Use textContent, not innerHTML, to prevent HTML injection
+            const titleEl = document.createElement('div');
+            titleEl.className = 'queue-item-title';
+            titleEl.textContent = entry.title;  // safe — no innerHTML
+
+            const barBgEl = document.createElement('div');
+            barBgEl.className = 'queue-item-bar-bg hidden';
+            const barFillEl = document.createElement('div');
+            barFillEl.className = 'queue-item-bar-fill';
+            barBgEl.appendChild(barFillEl);
+
+            infoEl.appendChild(titleEl);
+            infoEl.appendChild(barBgEl);
+
+            const statusEl = document.createElement('div');
+            statusEl.className = 'queue-item-status';
+            statusEl.id = `queue-status-${i}`;
+            statusEl.innerHTML = '<i class="fa-regular fa-clock"></i> Pending';
+
+            item.appendChild(numEl);
+            item.appendChild(infoEl);
+            item.appendChild(statusEl);
             queueList.appendChild(item);
         });
 
@@ -337,11 +456,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ── Playlist folder modal ──────────────────────────────────
-    const playlistFolderModal   = document.getElementById('playlist-folder-modal');
-    const playlistFolderInput   = document.getElementById('playlist-folder-input');
-    const playlistBrowseBtn     = document.getElementById('playlist-browse-btn');
-    const playlistModalCancel   = document.getElementById('playlist-modal-cancel');
-    const playlistModalConfirm  = document.getElementById('playlist-modal-confirm');
+    const playlistFolderModal  = document.getElementById('playlist-folder-modal');
+    const playlistFolderInput  = document.getElementById('playlist-folder-input');
+    const playlistBrowseBtn    = document.getElementById('playlist-browse-btn');
+    const playlistModalCancel  = document.getElementById('playlist-modal-cancel');
+    const playlistModalConfirm = document.getElementById('playlist-modal-confirm');
 
     playlistBrowseBtn.addEventListener('click', async () => {
         playlistBrowseBtn.disabled = true;
@@ -383,7 +502,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── Queue sequential download ──────────────────────────────
     async function startQueueDownload(saveFolder) {
         const type    = formatSelectRef.value;
-        const quality = type === 'mp4' ? qualitySelectRef.value : 'best';
+        // B1: Use actual quality value for both mp3 and mp4
+        const quality = qualitySelectRef.value;
         const overallStatus = document.getElementById('queue-overall-status');
         const startBtn = document.getElementById('btn-start-queue');
 
@@ -394,14 +514,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const entry = playlistEntries[i];
             updateQueueItem(i, 'downloading', 0);
             overallStatus.textContent = `Downloading ${i + 1} / ${playlistEntries.length}`;
-            // Scroll item into view
             document.getElementById(`queue-item-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-            const outputTemplate = saveFolder
-                ? saveFolder + '\\' + '%(title)s [%(id)s].%(ext)s'
-                : '%(title)s [%(id)s].%(ext)s';
-
-            const ok = await downloadSingleSSE(entry.url, type, quality, outputTemplate, i);
+            // B4: Pass saveDir separately so server can escape % and build template
+            const ok = await downloadSingleSSE(entry.url, type, quality, null, saveFolder, i);
             updateQueueItem(i, ok ? 'done' : 'error');
         }
 
@@ -411,17 +527,20 @@ document.addEventListener('DOMContentLoaded', () => {
         startBtn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> Download Again';
     }
 
-    function downloadSingleSSE(url, type, quality, savePath, queueIndex) {
+    function downloadSingleSSE(url, type, quality, savePath, saveDir, queueIndex) {
         return new Promise((resolve) => {
-            const qs = new URLSearchParams({ url, type, quality, savePath }).toString();
+            const params = { url, type, quality };
+            if (savePath) params.savePath = savePath;
+            if (saveDir)  params.saveDir  = saveDir;
+            const qs = new URLSearchParams(params).toString();
             const es = new EventSource(`/api/download?${qs}`);
 
             es.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    const percentMatch = (data.log || '').match(/\[download\]\s+(\d+\.?\d*)%/);
-                    if (percentMatch) {
-                        updateQueueItem(queueIndex, 'downloading', parseFloat(percentMatch[1]).toFixed(0));
+                    // A6: Use server-parsed progress (not re-parsed from log text)
+                    if (typeof data.progress === 'number' && queueIndex !== undefined) {
+                        updateQueueItem(queueIndex, 'downloading', data.progress.toFixed(0));
                     }
                     if (data.done) { es.close(); resolve(true); }
                     if (data.error) { es.close(); resolve(false); }
@@ -483,20 +602,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── Single video download ──────────────────────────────────
     async function startDownload() {
-        const url     = urlInput.value.trim();
-        const type    = formatSelectRef.value;
-        const quality = type === 'mp4' ? qualitySelectRef.value : 'best';
+        const url  = urlInput.value.trim();
+        const type = formatSelectRef.value;
+        // B1: Use qualitySelectRef.value for BOTH mp3 and mp4
+        const quality = qualitySelectRef.value;
         if (!url) return;
 
         const fullSavePath = await showFolderModal();
         if (!fullSavePath) return;
 
-        // Trim params
+        // A2: Trim values already snapped to whole seconds in setThumb()
         let startTime = '';
         let endTime   = '';
         if (trimEnabled.checked && trimDuration > 0) {
-            if (trimStartSec > 0)                startTime = String(Math.floor(trimStartSec));
-            if (trimEndSec < trimDuration - 0.5)  endTime   = String(Math.floor(trimEndSec));
+            if (trimStartSec > 0)               startTime = String(trimStartSec);
+            if (trimEndSec < trimDuration - 0.5) endTime   = String(trimEndSec);
         }
 
         progressContainer.classList.remove('hidden');
@@ -510,7 +630,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (eventSource) eventSource.close();
 
-        const qs = new URLSearchParams({ url, type, quality, savePath: fullSavePath, startTime, endTime }).toString();
+        // B4: Pass savePath; server handles % escaping
+        const params = { url, type, quality, savePath: fullSavePath, startTime, endTime };
+        const qs = new URLSearchParams(params).toString();
         eventSource = new EventSource(`/api/download?${qs}`);
 
         addLog(`Started: ${url}`);
@@ -519,10 +641,11 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.log) addLog(data.log);
-                if (data.progress !== undefined && !data.done) {
+                // A6: Only update bar when server sends an explicit progress value
+                if (typeof data.progress === 'number' && !data.done) {
                     progressBarFillRef.style.width = `${data.progress}%`;
-                    progressPercentRef.textContent = `${data.progress}%`;
-                    progressStatusRef.textContent  = data.progress === 100 ? 'Finalizing...' : 'Downloading...';
+                    progressPercentRef.textContent = `${Math.round(data.progress)}%`;
+                    progressStatusRef.textContent  = data.progress >= 99 ? 'Finalizing...' : 'Downloading...';
                 }
                 if (data.done) {
                     progressStatusRef.textContent = 'Completed!';
@@ -573,9 +696,13 @@ document.addEventListener('DOMContentLoaded', () => {
         updateLog.innerHTML = '';
         updateBarFill.style.width = '0%';
         updateStatus.textContent  = 'Connecting...';
+        updateStatus.style.color  = '';
         updatePercent.textContent = '';
         btnUpdate.disabled = true;
         btnUpdate.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Updating...';
+
+        // B10: Server now uses yt-dlp -U; no progress bar needed
+        updateBarFill.style.width = '100%'; // indeterminate state
 
         const es = new EventSource('/api/update-ytdlp');
         es.onmessage = (event) => {
@@ -588,14 +715,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateLog.scrollTop = updateLog.scrollHeight;
                     updateStatus.textContent = data.log;
                 }
-                if (data.progress !== undefined) {
-                    updateBarFill.style.width = data.progress + '%';
-                    updatePercent.textContent = data.progress + '%';
-                }
                 if (data.done) {
                     updateStatus.textContent = '✅ Updated successfully!';
                     updateStatus.style.color = '#34d399';
-                    updateBarFill.style.width = '100%';
                     es.close();
                     btnUpdate.disabled = false;
                     btnUpdate.innerHTML = '<i class="fa-solid fa-rotate"></i> Update yt-dlp';
