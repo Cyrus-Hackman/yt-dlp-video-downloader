@@ -24,6 +24,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let playlistEntries   = [];
     let eventSource       = null;
     let isFetching        = false; // Fix 6c: prevents overlapping fetches
+    let fetchedUrl        = '';    // Fix 2: the URL that was actually fetched successfully
+    let isQueueRunning    = false; // Fix 3: protect queue from URL input changes
 
     // Trim state
     let trimDuration = 0;
@@ -182,8 +184,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── A4: Reset state when URL input changes ─────────────────
     urlInput.addEventListener('input', () => {
+        // Fix 3: Don't clear state while a playlist queue is running
+        if (isQueueRunning) return;
         currentVideoInfo  = null;
         currentIsPlaylist = false;
+        fetchedUrl        = '';
         trimDuration = 0;
         trimEnabled.checked = false;
         trimControls.classList.add('disabled');
@@ -274,11 +279,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Fix 6c: Prevent overlapping fetches
         if (isFetching) return;
         isFetching = true;
+        // Fix 2: capture the URL we're about to fetch so we can discard stale results
+        const fetchingUrl = url;
 
         // A4: Reset info at start of every fetch
         currentVideoInfo  = null;
         currentIsPlaylist = false;
         playlistEntries   = [];
+        fetchedUrl        = '';
         trimDuration = 0;
 
         // Reset UI
@@ -307,15 +315,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Fix 6d: Use custom modal — no more ambiguous confirm()
                 const choice = await videoOrPlaylistModal.ask();
                 if (choice === 'video') {
-                    await fetchSingleVideo(url);
+                    await fetchSingleVideo(fetchingUrl);
                 } else if (choice === 'playlist') {
-                    await fetchPlaylist(url);
+                    await fetchPlaylist(fetchingUrl);
                 }
                 // 'cancel' → do nothing, just restore UI
             } else if (hasPlaylist) {
-                await fetchPlaylist(url);
+                await fetchPlaylist(fetchingUrl);
             } else {
-                await fetchSingleVideo(url);
+                await fetchSingleVideo(fetchingUrl);
+            }
+
+            // Fix 2: Discard result if the user has since changed the URL
+            if (urlInput.value.trim() !== fetchingUrl) {
+                // URL changed while fetch was in flight — silently reset
+                currentVideoInfo  = null;
+                currentIsPlaylist = false;
+                playlistEntries   = [];
+                fetchedUrl        = '';
+                videoInfoRef.classList.add('hidden');
+                optionsRowRef.classList.add('hidden');
+                trimSection.classList.add('hidden');
+                btnDownload.classList.add('hidden');
+                btnDownload.disabled = true;
+                document.getElementById('queue-container').classList.add('hidden');
             }
         } catch (err) {
             alert('Error: ' + err.message);
@@ -338,6 +361,8 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(err.error || 'Failed to fetch');
         }
         const data = await res.json();
+        // Fix 2: set fetchedUrl only after a successful fetch
+        fetchedUrl = url;
         currentVideoInfo = data;
         videoTitleRef.textContent = data.title || 'Unknown Title';
         videoThumbRef.src = data.thumbnail || '';
@@ -378,6 +403,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const plData = await plRes.json();
 
         if (plData.isPlaylist && plData.entries && plData.entries.length > 0) {
+            // Fix 2: set fetchedUrl only after a successful fetch
+            fetchedUrl        = url;
             currentIsPlaylist = true;
             playlistEntries   = plData.entries;
             buildPlaylistQueue(plData.title, plData.entries);
@@ -566,26 +593,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── Queue sequential download ──────────────────────────────
     async function startQueueDownload(saveFolder) {
         const type    = formatSelectRef.value;
-        // B1: Use actual quality value for both mp3 and mp4
         const quality = qualitySelectRef.value;
+        // Fix 2: snapshot entries at start so URL changes can't affect mid-queue
+        const entriesToDownload = [...playlistEntries];
         const overallStatus = document.getElementById('queue-overall-status');
         const startBtn = document.getElementById('btn-start-queue');
 
-        startBtn.disabled = true;
+        // Fix 3: Lock URL input and fetch button while queue runs
+        isQueueRunning   = true;
+        urlInput.disabled  = true;
+        btnFetch.disabled  = true;
+        startBtn.disabled  = true;
         btnDownload.disabled = true;
 
-        for (let i = 0; i < playlistEntries.length; i++) {
-            const entry = playlistEntries[i];
+        for (let i = 0; i < entriesToDownload.length; i++) {
+            const entry = entriesToDownload[i];
             updateQueueItem(i, 'downloading', 0);
-            overallStatus.textContent = `Downloading ${i + 1} / ${playlistEntries.length}`;
+            overallStatus.textContent = `Downloading ${i + 1} / ${entriesToDownload.length}`;
             document.getElementById(`queue-item-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-            // B4: Pass saveDir separately so server can escape % and build template
             const ok = await downloadSingleSSE(entry.url, type, quality, null, saveFolder, i);
             updateQueueItem(i, ok ? 'done' : 'error');
         }
 
         overallStatus.innerHTML = '<i class="fa-solid fa-circle-check" style="color:#34d399"></i> All done!';
+        // Fix 3: Unlock URL input and fetch button
+        isQueueRunning   = false;
+        urlInput.disabled  = false;
+        btnFetch.disabled  = false;
         btnDownload.disabled = false;
         startBtn.disabled = false;
         startBtn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> Download Again';
@@ -666,9 +701,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── Single video download ──────────────────────────────────
     async function startDownload() {
-        const url  = urlInput.value.trim();
+        // Fix 2: use the URL that was fetched, not the current live input value
+        const url  = fetchedUrl || urlInput.value.trim();
         const type = formatSelectRef.value;
-        // B1: Use qualitySelectRef.value for BOTH mp3 and mp4
         const quality = qualitySelectRef.value;
         if (!url) return;
 

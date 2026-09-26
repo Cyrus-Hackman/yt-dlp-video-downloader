@@ -1,6 +1,6 @@
 # 🎬 YT-Downloader Pro
 
-[![Node.js](https://img.shields.io/badge/Node.js-v16+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-v18+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express-v5.0-000000?logo=express&logoColor=white)](https://expressjs.com/)
 [![yt-dlp](https://img.shields.io/badge/Engine-yt--dlp-FF0000?logo=youtube&logoColor=white)](https://github.com/yt-dlp/yt-dlp)
 [![FFmpeg](https://img.shields.io/badge/Converter-FFmpeg-007808?logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
@@ -130,7 +130,7 @@ Because executables are not hosted in the Git repository, download them directly
 
 #### Option A: Quick Launch (Recommended)
 Simply double-click the **`Start-Downloader.bat`** file in the root directory. It will:
-1. Automatically run `npm install express cors` if `node_modules` is missing.
+1. Automatically run `npm install` if `node_modules` is missing.
 2. Terminate any previous Node processes running on port 3789.
 3. Launch the server (`node server.js`).
 4. Automatically open `http://localhost:3789` in your web browser.
@@ -169,11 +169,10 @@ Simply double-click the **`Start-Downloader.bat`** file in the root directory. I
 | :--- | :--- | :--- |
 | `/api/info` | `POST` | Fetches metadata, available resolutions, and audio formats for a video. |
 | `/api/playlist-info` | `POST` | Fetches flat playlist metadata and list of videos. |
-| `/api/video-duration`| `POST` | Quickly retrieves total video duration in seconds for trimming calculations. |
 | `/api/select-folder` | `GET` | Invokes native Windows `SaveFileDialog` via PowerShell. |
 | `/api/select-folder-only` | `GET` | Invokes native Windows `FolderBrowserDialog` via PowerShell. |
 | `/api/download` | `GET` | Initiates media download and streams real-time progress via SSE. |
-| `/api/update-ytdlp` | `GET` | Downloads the latest `yt-dlp.exe` binary from GitHub releases with live progress. |
+| `/api/update-ytdlp` | `GET` | Runs `yt-dlp -U` and streams the output via SSE. |
 
 ---
 

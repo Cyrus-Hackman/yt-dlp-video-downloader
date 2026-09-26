@@ -211,9 +211,11 @@ app.get("/api/download", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  const sendSSE = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  // Fix 1: no-op once response is closed to prevent "write after end" errors
+  const sendSSE = (payload) => {
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
 
-  // Fix 3: Refuse while an update is running
   if (isUpdating) {
     sendSSE({ error: true, log: "Cannot download while yt-dlp is updating. Please wait." });
     return res.end();
@@ -327,12 +329,20 @@ app.get("/api/download", (req, res) => {
   // Fix 3: Track active downloads
   activeDownloads++;
 
+  // Fix 1: finished flag + finish() ensure error and close never both run
+  let finished = false;
+  function finish(payload) {
+    if (finished) return;
+    finished = true;
+    activeDownloads = Math.max(0, activeDownloads - 1);
+    sendSSE(payload);
+    res.end();
+  }
+
   // Fix 3: Handle spawn error (missing yt-dlp.exe etc.)
   downloadProcess.on("error", (err) => {
     console.error("spawn error (download):", err.message);
-    sendSSE({ error: true, log: "Could not start yt-dlp: " + err.message });
-    activeDownloads = Math.max(0, activeDownloads - 1);
-    res.end();
+    finish({ error: true, log: "Could not start yt-dlp: " + err.message });
   });
 
   // A6: Parse progress from stdout
@@ -392,13 +402,11 @@ app.get("/api/download", (req, res) => {
   });
 
   downloadProcess.on("close", (code) => {
-    activeDownloads = Math.max(0, activeDownloads - 1);
     if (code === 0) {
-      sendSSE({ done: true, progress: 100, log: "Download completed successfully!" });
+      finish({ done: true, progress: 100, log: "Download completed successfully!" });
     } else {
-      sendSSE({ error: true, log: `Process exited with code ${code}` });
+      finish({ error: true, log: `Process exited with code ${code}` });
     }
-    res.end();
   });
 
   // A7: Kill process tree when client disconnects
@@ -411,7 +419,10 @@ app.get("/api/update-ytdlp", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  const sendSSE = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  // Fix 1: no-op once response is closed to prevent "write after end" errors
+  const sendSSE = (payload) => {
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
 
   // Fix 3: Refuse while downloads are running
   if (activeDownloads > 0) {
@@ -425,12 +436,20 @@ app.get("/api/update-ytdlp", (req, res) => {
 
   const proc = spawn(ytDlpPath, ["-U"]);
 
+  // Fix 1: finished flag + finish() ensure error and close never both run
+  let finished = false;
+  function finish(payload) {
+    if (finished) return;
+    finished = true;
+    isUpdating = false;
+    sendSSE(payload);
+    res.end();
+  }
+
   // Fix 3: Handle spawn error
   proc.on("error", (err) => {
-    isUpdating = false;
     console.error("spawn error (update):", err.message);
-    sendSSE({ error: true, log: "Could not start yt-dlp: " + err.message });
-    res.end();
+    finish({ error: true, log: "Could not start yt-dlp: " + err.message });
   });
 
   proc.stdout.on("data", (data) => {
@@ -443,17 +462,16 @@ app.get("/api/update-ytdlp", (req, res) => {
   });
 
   proc.on("close", (code) => {
-    isUpdating = false;
     if (code === 0) {
-      sendSSE({ done: true, log: "yt-dlp is up to date! 🎉" });
+      finish({ done: true, log: "yt-dlp is up to date! 🎉" });
     } else {
-      sendSSE({ error: true, log: `Update process exited with code ${code}` });
+      finish({ error: true, log: `Update process exited with code ${code}` });
     }
-    res.end();
   });
 
   res.on("close", () => {
-    isUpdating = false;
+    // finish() is idempotent — safe to call if proc ended normally already
+    finish({ error: true, log: "Client disconnected" });
     killTree(proc);
   });
 });
